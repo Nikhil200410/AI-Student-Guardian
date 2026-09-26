@@ -7,6 +7,8 @@ const { Pool } = require("pg");
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
+  // Hosted Postgres providers (Supabase, Neon) require SSL.
+  ssl: { rejectUnauthorized: false },
 });
 
 // Small helper so route/controller files can just do: const { rows } = await db.query(...)

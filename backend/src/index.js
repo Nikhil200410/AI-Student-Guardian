@@ -8,7 +8,20 @@ const cors = require("cors");
 const cookieParser = require("cookie-parser");
 
 const profileRoutes = require("./routes/profile.routes");
-const authRoutes = require("./routes/auth.routes");
+// Old custom OTP auth (auth.routes.js) is retired — Supabase Auth now
+// owns signup/login/verification/reset. Its files are intentionally left
+// on disk, unused, pending your local verification before deletion (see
+// implementation report) rather than deleted sight-unseen.
+const authSessionRoutes = require("./routes/authSession.routes");
+const educationRoutes = require("./routes/education.routes");
+const goalsRoutes = require("./routes/goals.routes");
+const skillCategoriesRoutes = require("./routes/skillCategories.routes");
+const skillsRoutes = require("./routes/skills.routes");
+const interestsRoutes = require("./routes/interests.routes");
+const preferencesRoutes = require("./routes/preferences.routes");
+const availabilityRoutes = require("./routes/availability.routes");
+const hobbiesRoutes = require("./routes/hobbies.routes");
+const digitalTwinRoutes = require("./routes/digitalTwin.routes");
 const { pool } = require("./db");
 
 const app = express();
@@ -38,8 +51,17 @@ app.get("/api/health", async (req, res) => {
   }
 });
 
-app.use("/api/auth", authRoutes);
+app.use("/api/auth", authSessionRoutes);
 app.use("/api/profile", profileRoutes);
+app.use("/api/education", educationRoutes);
+app.use("/api/goals", goalsRoutes);
+app.use("/api/skill-categories", skillCategoriesRoutes);
+app.use("/api/skills", skillsRoutes);
+app.use("/api/interests", interestsRoutes);
+app.use("/api/preferences", preferencesRoutes);
+app.use("/api/availability", availabilityRoutes);
+app.use("/api/hobbies", hobbiesRoutes);
+app.use("/api/digital-twin", digitalTwinRoutes);
 
 // Catch-all for unknown routes
 app.use((req, res) => {

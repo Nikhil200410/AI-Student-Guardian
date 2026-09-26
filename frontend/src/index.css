@@ -97,3 +97,116 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 .form-error { color: #b3261e; font-weight: 600; }
 .status { text-align: center; margin-top: 3rem; color: #666; }
 .empty-state { align-items: flex-start; }
+
+select {
+  padding: 0.55rem 0.7rem;
+  border: 1px solid #d4d6e2;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  background: white;
+}
+
+/* --- Phase 2: top nav tabs (Profile / Digital Twin) --- */
+.app-nav { display: flex; gap: 0.4rem; margin-right: 0.5rem; }
+.app-nav button {
+  padding: 0.35rem 0.8rem;
+  font-size: 0.85rem;
+  background: #ffffff;
+  color: #3355ee;
+  border-color: #d4d6e2;
+}
+.app-nav button.active {
+  background: #3355ee;
+  color: white;
+  border-color: #3355ee;
+}
+
+/* --- Phase 2: Digital Twin sidebar dashboard --- */
+.twin-layout {
+  display: flex;
+  gap: 2rem;
+  max-width: 960px;
+  margin: 2rem auto;
+  padding: 0 1rem;
+  align-items: flex-start;
+}
+
+.twin-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 190px;
+  background: #ffffff;
+  border: 1px solid #e4e6ef;
+  border-radius: 14px;
+  padding: 0.75rem;
+}
+.twin-sidebar-link {
+  text-align: left;
+  background: transparent;
+  color: #444;
+  border: none;
+  font-weight: 500;
+  padding: 0.55rem 0.7rem;
+  border-radius: 8px;
+}
+.twin-sidebar-link.active { background: #eaeeff; color: #3355ee; }
+.twin-sidebar-link:hover { background: #f2f3fa; }
+
+.twin-content { flex: 1; min-width: 0; }
+.twin-content h2 { margin-top: 0; }
+
+.twin-list { display: flex; flex-direction: column; gap: 0.75rem; margin-top: 1rem; }
+
+.twin-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 1rem;
+}
+.twin-summary-card { cursor: pointer; }
+.twin-summary-card:hover { border-color: #3355ee; }
+.twin-summary-card h3 { margin: 0; font-size: 1rem; }
+.twin-summary-card p { margin: 0; color: #444; }
+
+.twin-empty-hint { color: #888; font-size: 0.9rem; }
+
+.twin-tag-list { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 1rem; }
+.twin-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: #eaeeff;
+  color: #3355ee;
+  padding: 0.35rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+}
+.twin-tag-remove {
+  background: none;
+  border: none;
+  color: #3355ee;
+  padding: 0;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.twin-slot-row { flex-direction: row; align-items: center; justify-content: space-between; }
+
+.twin-evidence-panel {
+  border-top: 1px solid #e4e6ef;
+  margin-top: 0.5rem;
+  padding-top: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.twin-evidence-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+}
+.twin-evidence-form { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.twin-evidence-form input { flex: 1; min-width: 120px; }

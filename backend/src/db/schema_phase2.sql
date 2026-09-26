@@ -13,25 +13,53 @@
 -- This file does not touch schema.sql or schema_phase1.sql.
 
 -- ============================================================
--- 1. education_records
+-- 1a. education_levels (lookup table — extend by inserting rows, same
+--     pattern as skill_categories below. Keeps the system from assuming
+--     every student is at one specific level, e.g. B.Tech.)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS education_levels (
+  id          SERIAL PRIMARY KEY,
+  name        VARCHAR(80) UNIQUE NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+INSERT INTO education_levels (name) VALUES
+  ('School'),
+  ('Intermediate / Higher Secondary'),
+  ('Diploma'),
+  ('Undergraduate'),
+  ('Postgraduate'),
+  ('Doctorate'),
+  ('Other')
+ON CONFLICT (name) DO NOTHING;
+
+-- ============================================================
+-- 1b. education_records
+--     degree_type stays free text (needs to hold values as varied as
+--     "Class 11", "B.Tech", "Diploma", "M.Tech" — not a fixed list).
+--     discipline is now OPTIONAL — not every level has one (or has one
+--     yet, e.g. before choosing a stream).
 -- ============================================================
 CREATE TABLE IF NOT EXISTS education_records (
-  id                SERIAL PRIMARY KEY,
-  user_id           INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  degree_type       VARCHAR(120) NOT NULL,
-  discipline        VARCHAR(120) NOT NULL,
-  institution       VARCHAR(200),
-  current_year      INTEGER,
-  current_semester  INTEGER CHECK (current_semester BETWEEN 1 AND 12),
-  is_current        BOOLEAN NOT NULL DEFAULT true,
-  created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+  id                  SERIAL PRIMARY KEY,
+  user_id             INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  education_level_id  INTEGER NOT NULL REFERENCES education_levels(id),
+  degree_type         VARCHAR(120) NOT NULL,
+  discipline          VARCHAR(120),
+  institution         VARCHAR(200),
+  current_year        INTEGER,
+  current_semester    INTEGER CHECK (current_semester BETWEEN 1 AND 12),
+  is_current          BOOLEAN NOT NULL DEFAULT true,
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_education_records_user_id ON education_records (user_id);
+CREATE INDEX IF NOT EXISTS idx_education_records_education_level_id ON education_records (education_level_id);
 
--- Enforces "one current education record per student" (multiple non-current
--- historical records will be allowed later without any schema change).
+-- Enforces "at most one current education record per student" — multiple
+-- non-current (historical) records are fully supported, e.g.
+-- Intermediate (completed) + B.Tech (current) for the same student.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_education_records_one_current
   ON education_records (user_id)
   WHERE is_current = true;
@@ -184,15 +212,23 @@ CREATE INDEX IF NOT EXISTS idx_hobbies_commitments_user_id ON hobbies_commitment
 --     current_year is intentionally left NULL — Phase 0/1 never collected a
 --     "year" value (only semester), so there is nothing to migrate it from.
 --     Do NOT guess it from semester.
+--     education_level_id defaults to 'Undergraduate' for migrated rows —
+--     Phase 0/1's profile fields (degree/department/semester) were always
+--     framed around a single college program, so this is a reasonable
+--     best-effort default, not a guess about any individual student. The
+--     student can correct it afterward via the Education section, same as
+--     any other field.
 -- ============================================================
-INSERT INTO education_records (user_id, degree_type, discipline, current_year, current_semester, is_current)
-SELECT user_id, degree, department, NULL, semester, true
-FROM student_profile
-WHERE user_id IS NOT NULL
-  AND degree IS NOT NULL
+INSERT INTO education_records (user_id, education_level_id, degree_type, discipline, current_year, current_semester, is_current)
+SELECT sp.user_id,
+       (SELECT id FROM education_levels WHERE name = 'Undergraduate'),
+       sp.degree, sp.department, NULL, sp.semester, true
+FROM student_profile sp
+WHERE sp.user_id IS NOT NULL
+  AND sp.degree IS NOT NULL
   AND NOT EXISTS (
     SELECT 1 FROM education_records er
-    WHERE er.user_id = student_profile.user_id AND er.is_current = true
+    WHERE er.user_id = sp.user_id AND er.is_current = true
   );
 
 -- ============================================================

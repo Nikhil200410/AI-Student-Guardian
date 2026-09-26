@@ -16,6 +16,14 @@ export async function fetchOverview() {
 }
 
 // --- Education ---
+export async function fetchEducationLevels() {
+  const { data } = await api.get("/education/levels");
+  return data;
+}
+export async function fetchEducationRecords() {
+  const { data } = await api.get("/education");
+  return data;
+}
 export async function fetchCurrentEducation() {
   try {
     const { data } = await api.get("/education/current");
@@ -32,6 +40,13 @@ export async function createEducation(payload) {
 export async function updateEducation(id, payload) {
   const { data } = await api.put(`/education/${id}`, payload);
   return data;
+}
+export async function setCurrentEducation(id) {
+  const { data } = await api.post(`/education/${id}/set-current`);
+  return data;
+}
+export async function deleteEducation(id) {
+  await api.delete(`/education/${id}`);
 }
 
 // --- Goals ---

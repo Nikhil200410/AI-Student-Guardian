@@ -2,36 +2,22 @@
 // "Controller" = the function that runs when a specific route is hit.
 // It reads the request, talks to the database, and sends back a response.
 // It does NOT decide the URL or HTTP method — that's the router's job (see routes/profile.routes.js).
+//
+// As of Phase 2, this resource is basic identity only (name). Education
+// (degree/discipline/institution/year/semester) lives in education_records
+// — see education.controller.js.
 
 const db = require("../db");
 
-const ALLOWED_SEMESTERS = { min: 1, max: 12 };
-
 function validateProfileInput(body) {
   const errors = [];
-  const { name, degree, department, semester } = body;
+  const { name } = body;
 
   if (!name || typeof name !== "string" || !name.trim()) {
     errors.push("name is required and must be a non-empty string");
   }
-  if (!degree || typeof degree !== "string" || !degree.trim()) {
-    errors.push("degree is required and must be a non-empty string");
-  }
-  if (!department || typeof department !== "string" || !department.trim()) {
-    errors.push("department is required and must be a non-empty string");
-  }
-  const semesterNum = Number(semester);
-  if (
-    !Number.isInteger(semesterNum) ||
-    semesterNum < ALLOWED_SEMESTERS.min ||
-    semesterNum > ALLOWED_SEMESTERS.max
-  ) {
-    errors.push(
-      `semester is required and must be a whole number between ${ALLOWED_SEMESTERS.min} and ${ALLOWED_SEMESTERS.max}`
-    );
-  }
 
-  return { errors, semesterNum };
+  return { errors };
 }
 
 // GET /api/profile
@@ -39,7 +25,7 @@ function validateProfileInput(body) {
 async function getProfile(req, res) {
   try {
     const { rows } = await db.query(
-      "SELECT id, name, degree, department, semester, created_at, updated_at FROM student_profile WHERE user_id = $1",
+      "SELECT id, name, created_at, updated_at FROM student_profile WHERE user_id = $1",
       [req.userId]
     );
     if (rows.length === 0) {
@@ -56,12 +42,12 @@ async function getProfile(req, res) {
 // Creates the logged-in user's profile row. Fails with 409 if one already exists
 // (use PUT /api/profile to update an existing profile instead).
 async function createProfile(req, res) {
-  const { errors, semesterNum } = validateProfileInput(req.body);
+  const { errors } = validateProfileInput(req.body);
   if (errors.length > 0) {
     return res.status(400).json({ error: "Validation failed", details: errors });
   }
 
-  const { name, degree, department } = req.body;
+  const { name } = req.body;
 
   try {
     const existing = await db.query("SELECT id FROM student_profile WHERE user_id = $1", [req.userId]);
@@ -72,10 +58,10 @@ async function createProfile(req, res) {
     }
 
     const { rows } = await db.query(
-      `INSERT INTO student_profile (user_id, name, degree, department, semester)
-       VALUES ($1, $2, $3, $4, $5)
-       RETURNING id, name, degree, department, semester, created_at, updated_at`,
-      [req.userId, name.trim(), degree.trim(), department.trim(), semesterNum]
+      `INSERT INTO student_profile (user_id, name)
+       VALUES ($1, $2)
+       RETURNING id, name, created_at, updated_at`,
+      [req.userId, name.trim()]
     );
     return res.status(201).json(rows[0]);
   } catch (err) {
@@ -87,20 +73,20 @@ async function createProfile(req, res) {
 // PUT /api/profile
 // Updates the logged-in user's profile row. Fails with 404 if none exists yet.
 async function updateProfile(req, res) {
-  const { errors, semesterNum } = validateProfileInput(req.body);
+  const { errors } = validateProfileInput(req.body);
   if (errors.length > 0) {
     return res.status(400).json({ error: "Validation failed", details: errors });
   }
 
-  const { name, degree, department } = req.body;
+  const { name } = req.body;
 
   try {
     const { rows } = await db.query(
       `UPDATE student_profile
-       SET name = $1, degree = $2, department = $3, semester = $4, updated_at = now()
-       WHERE user_id = $5
-       RETURNING id, name, degree, department, semester, created_at, updated_at`,
-      [name.trim(), degree.trim(), department.trim(), semesterNum, req.userId]
+       SET name = $1, updated_at = now()
+       WHERE user_id = $2
+       RETURNING id, name, created_at, updated_at`,
+      [name.trim(), req.userId]
     );
     if (rows.length === 0) {
       return res.status(404).json({ error: "No profile exists yet. Use POST /api/profile to create one." });

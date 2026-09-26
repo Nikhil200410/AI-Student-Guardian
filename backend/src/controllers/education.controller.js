@@ -1,19 +1,33 @@
 // education.controller.js
-// Manages education_records. Phase 2 only ever shows/edits the ONE row
-// where is_current = true for a user, even though the table itself already
-// supports multiple rows per user (future: past degrees, dual degrees).
+// Manages education_records. A student can now have multiple records
+// (e.g. Intermediate -> B.Tech, or Class 11 -> Class 12 -> Intermediate ->
+// B.Tech -> Postgraduate) with at most one marked "current" at a time,
+// enforced by a partial unique index in the database. This is not
+// B.Tech-specific: education_level_id points at a small, extensible
+// lookup table (education_levels) rather than assuming any one path.
 
 const db = require("../db");
 
+async function validateEducationLevel(educationLevelId) {
+  const { rows } = await db.query("SELECT id FROM education_levels WHERE id = $1", [educationLevelId]);
+  return rows.length > 0;
+}
+
 function validateEducationInput(body) {
   const errors = [];
-  const { degree_type, discipline, institution, current_year, current_semester } = body;
+  const { education_level_id, degree_type, discipline, institution, current_year, current_semester } = body;
 
+  const levelIdNum = Number(education_level_id);
+  if (!education_level_id || !Number.isInteger(levelIdNum)) {
+    errors.push("education_level_id is required and must refer to a valid education level.");
+  }
   if (!degree_type || typeof degree_type !== "string" || !degree_type.trim()) {
     errors.push("degree_type is required.");
   }
-  if (!discipline || typeof discipline !== "string" || !discipline.trim()) {
-    errors.push("discipline is required.");
+  // discipline is optional as of this design — not every level has one
+  // (e.g. School, before a stream is chosen).
+  if (discipline !== undefined && discipline !== null && typeof discipline !== "string") {
+    errors.push("discipline must be a string.");
   }
   if (institution !== undefined && institution !== null && typeof institution !== "string") {
     errors.push("institution must be a string.");
@@ -35,16 +49,32 @@ function validateEducationInput(body) {
     }
   }
 
-  return { errors, yearNum, semesterNum };
+  return { errors, levelIdNum, yearNum, semesterNum };
 }
 
-// GET /api/education — list all education records for this user
+const RECORD_COLUMNS =
+  "id, education_level_id, degree_type, discipline, institution, current_year, current_semester, is_current, created_at, updated_at";
+
+// GET /api/education/levels — read-only lookup list for the level dropdown.
+async function listEducationLevels(req, res) {
+  try {
+    const { rows } = await db.query("SELECT id, name FROM education_levels ORDER BY id ASC");
+    return res.json(rows);
+  } catch (err) {
+    console.error("listEducationLevels error:", err);
+    return res.status(500).json({ error: "Could not load education levels." });
+  }
+}
+
+// GET /api/education — full history, current record first.
 async function listEducation(req, res) {
   try {
     const { rows } = await db.query(
-      `SELECT id, degree_type, discipline, institution, current_year, current_semester,
-              is_current, created_at, updated_at
-       FROM education_records WHERE user_id = $1 ORDER BY is_current DESC, created_at DESC`,
+      `SELECT er.*, el.name AS education_level_name
+       FROM education_records er
+       JOIN education_levels el ON el.id = er.education_level_id
+       WHERE er.user_id = $1
+       ORDER BY er.is_current DESC, er.created_at DESC`,
       [req.userId]
     );
     return res.json(rows);
@@ -58,9 +88,10 @@ async function listEducation(req, res) {
 async function getCurrentEducation(req, res) {
   try {
     const { rows } = await db.query(
-      `SELECT id, degree_type, discipline, institution, current_year, current_semester,
-              is_current, created_at, updated_at
-       FROM education_records WHERE user_id = $1 AND is_current = true`,
+      `SELECT er.*, el.name AS education_level_name
+       FROM education_records er
+       JOIN education_levels el ON el.id = er.education_level_id
+       WHERE er.user_id = $1 AND er.is_current = true`,
       [req.userId]
     );
     if (rows.length === 0) {
@@ -73,42 +104,79 @@ async function getCurrentEducation(req, res) {
   }
 }
 
-// POST /api/education — creates the current education record.
-// Fails with 409 if a current record already exists (use PUT to edit it).
+// POST /api/education
+// Creates a new education record. A student may have any number of
+// records — this no longer rejects the request just because a current
+// record already exists.
+//   - If the new record's is_current is requested true (or this is the
+//     student's very first record ever), any existing current record is
+//     atomically un-marked first, inside a transaction, so the database
+//     is never left with zero or two current records at once.
+//   - Otherwise the new record is simply added as historical (is_current = false).
 async function createEducation(req, res) {
-  const { errors, yearNum, semesterNum } = validateEducationInput(req.body);
+  const { errors, levelIdNum, yearNum, semesterNum } = validateEducationInput(req.body);
   if (errors.length > 0) {
     return res.status(400).json({ error: "Validation failed", details: errors });
   }
   const { degree_type, discipline, institution } = req.body;
+  const requestedCurrent = req.body.is_current === true;
 
+  const client = await db.pool.connect();
   try {
-    const existing = await db.query(
+    if (!(await validateEducationLevel(levelIdNum))) {
+      client.release();
+      return res.status(400).json({ error: "education_level_id does not refer to a known education level." });
+    }
+
+    await client.query("BEGIN");
+
+    const existingCurrent = await client.query(
       "SELECT id FROM education_records WHERE user_id = $1 AND is_current = true",
       [req.userId]
     );
-    if (existing.rows.length > 0) {
-      return res.status(409).json({
-        error: "A current education record already exists. Use PUT to update it.",
-      });
+    const shouldBeCurrent = requestedCurrent || existingCurrent.rows.length === 0;
+
+    if (shouldBeCurrent && existingCurrent.rows.length > 0) {
+      await client.query(
+        "UPDATE education_records SET is_current = false, updated_at = now() WHERE user_id = $1 AND is_current = true",
+        [req.userId]
+      );
     }
 
-    const { rows } = await db.query(
-      `INSERT INTO education_records (user_id, degree_type, discipline, institution, current_year, current_semester, is_current)
-       VALUES ($1, $2, $3, $4, $5, $6, true)
-       RETURNING id, degree_type, discipline, institution, current_year, current_semester, is_current, created_at, updated_at`,
-      [req.userId, degree_type.trim(), discipline.trim(), institution ? institution.trim() : null, yearNum, semesterNum]
+    const { rows } = await client.query(
+      `INSERT INTO education_records
+         (user_id, education_level_id, degree_type, discipline, institution, current_year, current_semester, is_current)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING ${RECORD_COLUMNS}`,
+      [
+        req.userId,
+        levelIdNum,
+        degree_type.trim(),
+        discipline ? discipline.trim() : null,
+        institution ? institution.trim() : null,
+        yearNum,
+        semesterNum,
+        shouldBeCurrent,
+      ]
     );
+
+    await client.query("COMMIT");
     return res.status(201).json(rows[0]);
   } catch (err) {
+    await client.query("ROLLBACK");
     console.error("createEducation error:", err);
     return res.status(500).json({ error: "Could not create the education record." });
+  } finally {
+    client.release();
   }
 }
 
-// PUT /api/education/:id — the id must belong to this user (ownership check).
+// PUT /api/education/:id — edits a record's own fields. Does NOT change
+// is_current — use POST /api/education/:id/set-current for that, so the
+// two concerns (editing details vs. switching which one is current) stay
+// separate and each stays simple.
 async function updateEducation(req, res) {
-  const { errors, yearNum, semesterNum } = validateEducationInput(req.body);
+  const { errors, levelIdNum, yearNum, semesterNum } = validateEducationInput(req.body);
   if (errors.length > 0) {
     return res.status(400).json({ error: "Validation failed", details: errors });
   }
@@ -116,13 +184,26 @@ async function updateEducation(req, res) {
   const { id } = req.params;
 
   try {
+    if (!(await validateEducationLevel(levelIdNum))) {
+      return res.status(400).json({ error: "education_level_id does not refer to a known education level." });
+    }
+
     const { rows } = await db.query(
       `UPDATE education_records
-       SET degree_type = $1, discipline = $2, institution = $3, current_year = $4,
-           current_semester = $5, updated_at = now()
-       WHERE id = $6 AND user_id = $7
-       RETURNING id, degree_type, discipline, institution, current_year, current_semester, is_current, created_at, updated_at`,
-      [degree_type.trim(), discipline.trim(), institution ? institution.trim() : null, yearNum, semesterNum, id, req.userId]
+       SET education_level_id = $1, degree_type = $2, discipline = $3, institution = $4,
+           current_year = $5, current_semester = $6, updated_at = now()
+       WHERE id = $7 AND user_id = $8
+       RETURNING ${RECORD_COLUMNS}`,
+      [
+        levelIdNum,
+        degree_type.trim(),
+        discipline ? discipline.trim() : null,
+        institution ? institution.trim() : null,
+        yearNum,
+        semesterNum,
+        id,
+        req.userId,
+      ]
     );
     if (rows.length === 0) {
       return res.status(404).json({ error: "Education record not found." });
@@ -131,6 +212,46 @@ async function updateEducation(req, res) {
   } catch (err) {
     console.error("updateEducation error:", err);
     return res.status(500).json({ error: "Could not update the education record." });
+  }
+}
+
+// POST /api/education/:id/set-current
+// Atomically makes this record the current one and un-marks whatever
+// record (if any) was current before — never leaves zero or two current
+// records, even under concurrent requests, because both updates happen
+// inside one transaction against a row we've confirmed belongs to this user.
+async function setCurrentEducation(req, res) {
+  const { id } = req.params;
+  const client = await db.pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const target = await client.query(
+      "SELECT id FROM education_records WHERE id = $1 AND user_id = $2 FOR UPDATE",
+      [id, req.userId]
+    );
+    if (target.rows.length === 0) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "Education record not found." });
+    }
+
+    await client.query(
+      "UPDATE education_records SET is_current = false, updated_at = now() WHERE user_id = $1 AND is_current = true AND id != $2",
+      [req.userId, id]
+    );
+    const { rows } = await client.query(
+      `UPDATE education_records SET is_current = true, updated_at = now() WHERE id = $1 RETURNING ${RECORD_COLUMNS}`,
+      [id]
+    );
+
+    await client.query("COMMIT");
+    return res.json(rows[0]);
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("setCurrentEducation error:", err);
+    return res.status(500).json({ error: "Could not update your current education." });
+  } finally {
+    client.release();
   }
 }
 
@@ -152,4 +273,12 @@ async function deleteEducation(req, res) {
   }
 }
 
-module.exports = { listEducation, getCurrentEducation, createEducation, updateEducation, deleteEducation };
+module.exports = {
+  listEducationLevels,
+  listEducation,
+  getCurrentEducation,
+  createEducation,
+  updateEducation,
+  setCurrentEducation,
+  deleteEducation,
+};

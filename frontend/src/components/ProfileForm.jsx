@@ -1,11 +1,11 @@
 // ProfileForm.jsx
 // Used both for creating a new profile and editing an existing one.
-// It keeps its own local draft state (useState) while the user types,
-// and only calls onSubmit once they hit Save.
+// As of Phase 2, profile is basic identity only — see EducationSection.jsx
+// for degree/discipline/institution/year/semester.
 
 import { useState } from "react";
 
-const EMPTY = { name: "", degree: "", department: "", semester: "" };
+const EMPTY = { name: "" };
 
 export default function ProfileForm({ initialValues, onSubmit, onCancel, submitting }) {
   const [values, setValues] = useState(initialValues || EMPTY);
@@ -20,17 +20,12 @@ export default function ProfileForm({ initialValues, onSubmit, onCancel, submitt
     e.preventDefault();
     setError(null);
 
-    if (!values.name.trim() || !values.degree.trim() || !values.department.trim()) {
-      setError("Please fill in name, degree, and department.");
-      return;
-    }
-    const semesterNum = Number(values.semester);
-    if (!Number.isInteger(semesterNum) || semesterNum < 1 || semesterNum > 12) {
-      setError("Semester must be a whole number between 1 and 12.");
+    if (!values.name.trim()) {
+      setError("Please enter your name.");
       return;
     }
 
-    onSubmit({ ...values, semester: semesterNum });
+    onSubmit(values);
   }
 
   return (
@@ -40,34 +35,6 @@ export default function ProfileForm({ initialValues, onSubmit, onCancel, submitt
       <label>
         Name
         <input name="name" value={values.name} onChange={handleChange} placeholder="e.g. Priya Sharma" />
-      </label>
-
-      <label>
-        Degree
-        <input name="degree" value={values.degree} onChange={handleChange} placeholder="e.g. B.Tech" />
-      </label>
-
-      <label>
-        Department
-        <input
-          name="department"
-          value={values.department}
-          onChange={handleChange}
-          placeholder="e.g. Computer Science"
-        />
-      </label>
-
-      <label>
-        Semester
-        <input
-          name="semester"
-          type="number"
-          min="1"
-          max="12"
-          value={values.semester}
-          onChange={handleChange}
-          placeholder="e.g. 5"
-        />
       </label>
 
       <div className="card-actions">
