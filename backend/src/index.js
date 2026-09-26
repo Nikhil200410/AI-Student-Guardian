@@ -1,0 +1,58 @@
+// index.js
+// This is the entrypoint: it creates the Express app, wires up middleware
+// and routes, and starts the server listening on a port.
+
+require("dotenv").config();
+const express = require("express");
+const cors = require("cors");
+const cookieParser = require("cookie-parser");
+
+const profileRoutes = require("./routes/profile.routes");
+const authRoutes = require("./routes/auth.routes");
+const { pool } = require("./db");
+
+const app = express();
+
+// --- Middleware ---
+// credentials: true + an explicit origin (not "*") are both required for the
+// browser to send/receive the httpOnly auth cookie across origins.
+app.use(
+  cors({
+    origin: process.env.CORS_ORIGIN || "http://localhost:5173",
+    credentials: true,
+  })
+);
+app.use(express.json()); // lets us read JSON request bodies as req.body
+app.use(cookieParser()); // lets us read cookies as req.cookies
+
+// --- Routes ---
+
+// Health check: confirms the server is running AND can reach the database.
+app.get("/api/health", async (req, res) => {
+  try {
+    await pool.query("SELECT 1");
+    res.json({ status: "ok", database: "connected" });
+  } catch (err) {
+    console.error("Health check DB error:", err);
+    res.status(500).json({ status: "error", database: "unreachable" });
+  }
+});
+
+app.use("/api/auth", authRoutes);
+app.use("/api/profile", profileRoutes);
+
+// Catch-all for unknown routes
+app.use((req, res) => {
+  res.status(404).json({ error: `No route for ${req.method} ${req.originalUrl}` });
+});
+
+// Generic error handler (catches anything thrown/passed to next(err))
+app.use((err, req, res, next) => {
+  console.error("Unhandled error:", err);
+  res.status(500).json({ error: "Internal server error" });
+});
+
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => {
+  console.log(`AI Student Guardian backend running on http://localhost:${PORT}`);
+});
